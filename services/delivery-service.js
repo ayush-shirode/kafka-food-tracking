@@ -10,7 +10,8 @@ async function run() {
     await consumer.subscribe({topic : "order-status", fromBeginning: true});
 
     await consumer.run({
-        eachMessage: async ({message}) => {
+        autoCommit: false,
+        eachMessage: async ({topic, partition, message}) => {
             const raw = message.value.toString();
             try {
                 const data = JSON.parse(raw);
@@ -18,10 +19,18 @@ async function run() {
                 if (!data.status) {
                     throw new Error("Missing status");
                 }
-                
+
                 console.log("Received Order Status: ", data);
 
-                if (data.status !== "ACCEPTED") return;
+                if (data.status !== "ACCEPTED") {
+                    await consumer.commitOffsets([{
+                        topic,
+                        partition,
+                        offset: (Number(message.offset) + 1).toString(),
+                    }]);
+
+                    return;
+                }
 
                 const agentData = {
                     orderId: data.orderId,
@@ -40,6 +49,14 @@ async function run() {
                 });
 
                 console.log(`Agent assigned to order ${data.orderId}`);
+
+                await consumer.commitOffsets([{
+                    topic,
+                    partition,
+                    offset: (Number(message.offset) + 1).toString(),
+                }]);
+            
+            
             } catch (err) {
                 console.error("Error processing message:", err.message);
 
@@ -52,6 +69,13 @@ async function run() {
                         }
                     ]
                 })
+                
+                await consumer.commitOffsets([{
+                    topic,
+                    partition,
+                    offset: (Number(message.offset) + 1).toString(),
+                }]);
+
             }
         }
     })
